@@ -1,8 +1,6 @@
 resources:
 - repo: self
 
-trigger:
-# YAML file in the main branch
 schedules:
 - cron: "0 0 * * *"
   displayName: Daily midnight build
