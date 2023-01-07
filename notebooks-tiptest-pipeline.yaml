@@ -6,6 +6,8 @@ trigger: none
 variables:
 - name: targetChannel
   value: cst
+- name: storageAccountName
+  value: kyrushdevadls
 
 jobs:
 - job: Stage_TiP_Test_Notebooks
@@ -15,11 +17,13 @@ jobs:
   steps:
     - template: templates/conda.yml
     - template: templates/get_cst_notebooks.yml
-    - task: AzureFileCopy@5
+    - task: AzureCLI@1
+      displayName: Az File Copy to Storage
       inputs:
-        SourcePath: $(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)
-        azureSubscription: kyrush-devtest-rg 
-        Destination: AzureBlob
-        storage: kyrushdevadls
-        ContainerName: tip-notebooks-$(Build.BuildNumber)
-        BlobPrefix: $(targetChannel)/
+        azureSubscription: kyrush-devtest-rg
+        scriptLocation: inlineScript
+        inlineScript: |
+          az storage blob upload-batch \
+            --destination \tip-notebooks-$(Build.BuildNumber) \
+            --account-name "$(storageAccountName)" \
+            --source "$(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)"
