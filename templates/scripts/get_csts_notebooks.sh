@@ -25,7 +25,7 @@ echo "staging_dir: $staging_dir"
 # Check if the directory exists
 if [ ! -d "$staging_dir" ]; then
   # Create the directory if it does not exist
-  mkdir "$staging_dir"
+  mkdir -p "$staging_dir"
 fi
 
 
