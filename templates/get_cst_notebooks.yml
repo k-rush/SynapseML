@@ -1,0 +1,6 @@
+steps:
+  - task: Bash@3
+    displayName: 'Staging example notebooks as TiP test notebooks'
+    inputs:
+      filePath: './templates/scripts/get_csts_notebooks.sh'
+      arguments: './notebooks/features cst'

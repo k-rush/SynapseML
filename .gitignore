@@ -1,6 +1,7 @@
 # include BuildArtifacts.zip which is used in some parts of the build
 /BuildArtifacts*
 /TestResults
+/notebook-artifacts-staging*
 # accommodate installing the build environment locally
 /pkgs/
 # useful env configurations

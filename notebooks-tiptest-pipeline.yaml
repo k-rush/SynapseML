@@ -1,0 +1,15 @@
+resources:
+- repo: self
+
+trigger: none
+
+jobs:
+- job: Stage TiP Test Notebooks
+  cancelTimeoutInMinutes: 0
+  pool:
+    vmImage: ubuntu-20.04
+  steps:
+    - template: templates/update_cli.yml
+    - template: templates/conda.yml
+    - template: templates/kv.yml
+    - template: templates/get_cst_notebooks.yml
