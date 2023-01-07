@@ -23,7 +23,10 @@ jobs:
         azureSubscription: kyrush-devtest-rg
         scriptLocation: inlineScript
         inlineScript: |
+          echo "$(storageAccountName)"
+          echo "build\notebooks-pipeline-artifacts\$(Build.BuildNumber)"
+          echo "$(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)"
           az storage blob upload-batch \
-            --destination build\notebooks-pipeline-artifacts\$(Build.BuildNumber) \
+            --destination "build\notebooks-pipeline-artifacts\$(Build.BuildNumber)" \
             --account-name "$(storageAccountName)" \
             --source "$(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)"
