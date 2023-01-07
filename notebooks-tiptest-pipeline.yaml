@@ -24,6 +24,6 @@ jobs:
         scriptLocation: inlineScript
         inlineScript: |
           az storage blob upload-batch \
-            --destination \tip-notebooks-$(Build.BuildNumber) \
+            --destination build\notebooks-pipeline-artifacts\$(Build.BuildNumber) \
             --account-name "$(storageAccountName)" \
             --source "$(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)"
