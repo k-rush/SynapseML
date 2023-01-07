@@ -3,6 +3,10 @@ resources:
 
 trigger: none
 
+variables:
+- name: targetChannel
+  value: cst
+
 jobs:
 - job: Stage_TiP_Test_Notebooks
   cancelTimeoutInMinutes: 0
@@ -11,3 +15,11 @@ jobs:
   steps:
     - template: templates/conda.yml
     - template: templates/get_cst_notebooks.yml
+    - task: AzureFileCopy@5
+      inputs:
+        SourcePath: $(Build.ArtifactStagingDirectory)/notebook-artifacts-staging/$(targetChannel)
+        azureSubscription: kyrush-devtest-rg 
+        Destination: AzureBlob
+        storage: kyrushdevadls
+        ContainerName: tip-notebooks-$(Build.BuildNumber)
+        BlobPrefix: $(targetChannel)/

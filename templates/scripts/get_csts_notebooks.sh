@@ -15,9 +15,9 @@ fi
 # Check if the BUILD_ARTIFACTSTAGINGDIRECTORY environment variable is set, if not use relative path
 if [ -z "$BUILD_ARTIFACTSTAGINGDIRECTORY" ]
 then
-  staging_dir="./notebook-artifacts-staging/"
+  staging_dir="./notebook-artifacts-staging/$target/"
 else
-  staging_dir="$BUILD_ARTIFACTSTAGINGDIRECTORY/notebook-artifacts-staging/"
+  staging_dir="$BUILD_ARTIFACTSTAGINGDIRECTORY/notebook-artifacts-staging/$target/"
 fi
 
 echo "staging_dir: $staging_dir"
