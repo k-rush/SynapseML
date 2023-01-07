@@ -4,7 +4,7 @@ resources:
 trigger: none
 
 jobs:
-- job: Stage TiP Test Notebooks
+- job: Stage_TiP_Test_Notebooks
   cancelTimeoutInMinutes: 0
   pool:
     vmImage: ubuntu-20.04
