@@ -159,6 +159,10 @@ trait HasAADToken extends HasServiceParams {
   def setAADTokenCol(v: String): this.type = setVectorParam(AADToken, v)
 
   def getAADTokenCol: String = getVectorParam(AADToken)
+
+  def setDefaultAADToken(v: String): this.type = {
+    setDefault(AADToken -> Left(v))
+  }
 }
 
 trait HasCustomCogServiceDomain extends Wrappable with HasURL with HasUrlPath {
@@ -170,6 +174,13 @@ trait HasCustomCogServiceDomain extends Wrappable with HasURL with HasUrlPath {
     setUrl(v + urlPath.stripPrefix("/"))
   }
 
+  override def getUrl: String = this.getOrDefault(url)
+
+  def setDefaultInternalEndpoint(v: String): this.type = setDefault(
+    url, v + s"/cognitive/${this.internalServiceType}/" + urlPath.stripPrefix("/"))
+
+  private[ml] def internalServiceType: String = ""
+
   override def pyAdditionalMethods: String = super.pyAdditionalMethods + {
     """def setCustomServiceName(self, value):
       |    self._java_obj = self._java_obj.setCustomServiceName(value)
@@ -179,12 +190,16 @@ trait HasCustomCogServiceDomain extends Wrappable with HasURL with HasUrlPath {
       |    self._java_obj = self._java_obj.setEndpoint(value)
       |    return self
       |
+      |def setDefaultInternalEndpoint(self, value):
+      |    self._java_obj = self._java_obj.setDefaultInternalEndpoint(value)
+      |    return self
+      |
       |def _transform(self, dataset: DataFrame) -> DataFrame:
       |    if running_on_synapse_internal():
       |        from synapse.ml.mlflow import get_mlflow_env_config
       |        mlflow_env_configs = get_mlflow_env_config()
-      |        self.setAADToken(mlflow_env_configs.driver_aad_token)
-      |        self.setEndpoint(mlflow_env_configs.workload_endpoint + "/cognitive/api/")
+      |        self._java_obj.setDefaultAADToken(mlflow_env_configs.driver_aad_token)
+      |        self.setDefaultInternalEndpoint(mlflow_env_configs.workload_endpoint)
       |    return super()._transform(dataset)
       |""".stripMargin
   }
@@ -213,6 +228,22 @@ trait HasCustomCogServiceDomain extends Wrappable with HasURL with HasUrlPath {
   }
 }
 
+trait HasAPIVersion extends HasServiceParams {
+  val apiVersion: ServiceParam[String] = new ServiceParam[String](
+    this, "apiVersion", "version of the api", isRequired = true, isURLParam = true) {
+    override val payloadName: String = "api-version"
+  }
+
+  def getApiVersion: String = getScalarParam(apiVersion)
+
+  def setApiVersion(v: String): this.type = setScalarParam(apiVersion, v)
+
+  def getApiVersionCol: String = getVectorParam(apiVersion)
+
+  def setApiVersionCol(v: String): this.type = setVectorParam(apiVersion, v)
+
+}
+
 object URLEncodingUtils {
 
   private case class NameValuePairInternal(t: (String, String)) extends NameValuePair {
@@ -232,6 +263,8 @@ trait HasCognitiveServiceInput extends HasURL with HasSubscriptionKey with HasAA
     case p: ServiceParam[_] => p.payloadName
     case _ => p.name
   }
+
+  override def getUrl: String = this.getOrDefault(url)
 
   protected def prepareUrlRoot: Row => String = {
     _ => getUrl
@@ -461,8 +494,7 @@ abstract class CognitiveServicesBaseNoHandler(val uid: String) extends Transform
   }
 
   override def transform(dataset: Dataset[_]): DataFrame = {
-    logTransform[DataFrame](
-      getInternalTransformer(dataset.schema).transform(dataset)
+    logTransform[DataFrame](getInternalTransformer(dataset.schema).transform(dataset), dataset.columns.length
     )
   }
 

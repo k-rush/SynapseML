@@ -63,7 +63,7 @@ class LightGBMClassifier(override val uid: String)
      */
     val classifierParams = params.asInstanceOf[ClassifierTrainParams]
     if (classifierParams.isBinary) params
-    else classifierParams.setNumClass(getNumClasses(dataset))
+    else classifierParams.setNumClass(getNumClasses(dataset, getMaxNumClasses))
   }
 
   def getModel(trainParams: BaseTrainParams, lightGBMBooster: LightGBMBooster): LightGBMClassificationModel = {
@@ -160,7 +160,7 @@ class LightGBMClassificationModel(override val uid: String)
           " since no output columns were set.")
       }
       outputData.toDF
-    })
+    }, dataset.columns.length)
   }
 
   override protected def raw2probabilityInPlace(rawPrediction: Vector): Vector = {

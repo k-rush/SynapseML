@@ -26,7 +26,7 @@ trait TranslatorUtils extends TestBase {
 
   lazy val  textDf2: DataFrame = Seq(List("Good morning", "Bye")).toDF("text")
 
-  lazy val textDf3: DataFrame = Seq(List("This is bullshit.")).toDF("text")
+  lazy val textDf3: DataFrame = Seq(List("This is fucked.")).toDF("text")
 
   lazy val textDf4: DataFrame = Seq(List("<div class=\"notranslate\">This will not be translated." +
     "</div><div>This will be translated.</div>")).toDF("text")
@@ -105,7 +105,7 @@ class TranslateSuite extends TransformerFuzzing[Translate]
       .withColumn("translation", col("translation.text"))
       .select("translation", "transliteration").collect()
     assert(results.head.getSeq(0).mkString("\n") === "再见")
-    assert(results.head.getSeq(1).mkString("\n") === "zài jiàn")
+    assert(results.head.getSeq(1).mkString("\n").replaceAllLiterally(" ", "") === "zàijiàn")
   }
 
   test("Translate to multiple languages") {

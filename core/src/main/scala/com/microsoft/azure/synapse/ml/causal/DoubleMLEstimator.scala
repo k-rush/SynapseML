@@ -4,57 +4,61 @@
 package com.microsoft.azure.synapse.ml.causal
 
 import com.microsoft.azure.synapse.ml.codegen.Wrappable
-import com.microsoft.azure.synapse.ml.train.{TrainClassifier, TrainRegressor}
 import com.microsoft.azure.synapse.ml.core.schema.{DatasetExtensions, SchemaConstants}
 import com.microsoft.azure.synapse.ml.core.utils.StopWatch
 import com.microsoft.azure.synapse.ml.logging.SynapseMLLogging
 import com.microsoft.azure.synapse.ml.stages.DropColumns
-import org.apache.spark.annotation.Experimental
+import com.microsoft.azure.synapse.ml.train.{TrainClassifier, TrainRegressor}
 import org.apache.commons.math3.stat.descriptive.rank.Percentile
-import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.ml.{ComplexParamsReadable, ComplexParamsWritable, Estimator, Model, Pipeline}
+import org.apache.commons.math3.stat.inference.TestUtils
+import org.apache.spark.annotation.{DeveloperApi, Experimental}
 import org.apache.spark.ml.classification.ProbabilisticClassifier
-import org.apache.spark.ml.regression.{GeneralizedLinearRegression, Regressor}
 import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.ml.param.{DoubleArrayParam, ParamMap}
 import org.apache.spark.ml.param.shared.{HasPredictionCol, HasProbabilityCol, HasRawPredictionCol, HasWeightCol}
+import org.apache.spark.ml.param.{DoubleArrayParam, ParamMap}
+import org.apache.spark.ml.regression.{GeneralizedLinearRegression, Regressor}
 import org.apache.spark.ml.util.Identifiable
+import org.apache.spark.ml._
+import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Dataset}
-import org.apache.spark.sql.types.StructType
 
 import scala.concurrent.Future
 
+// scalastyle:off method.length
+// scalastyle:off cyclomatic.complexity
+
 /** Double ML estimators. The estimator follows the two stage process,
- *  where a set of nuisance functions are estimated in the first stage in a cross-fitting manner
- *  and a final stage estimates the average treatment effect (ATE) model.
- *  Our goal is to estimate the constant marginal ATE Theta(X)
- *
- *  In this estimator, the ATE is estimated by using the following estimating equations:
- *  .. math ::
- *      Y - \\E[Y | X, W] = \\Theta(X) \\cdot (T - \\E[T | X, W]) + \\epsilon
- *
- *  Thus if we estimate the nuisance functions :math:`q(X, W) = \\E[Y | X, W]` and
- *  :math:`f(X, W)=\\E[T | X, W]` in the first stage, we can estimate the final stage ate for each
- *  treatment t, by running a regression, minimizing the residual on residual square loss,
- *  estimating Theta(X) is a final regression problem, regressing tilde{Y} on X and tilde{T})
- *
- *  .. math ::
- *       \\hat{\\theta} = \\arg\\min_{\\Theta}\
- *       \E_n\\left[ (\\tilde{Y} - \\Theta(X) \\cdot \\tilde{T})^2 \\right]
- *
- * Where
- * `\\tilde{Y}=Y - \\E[Y | X, W]` and :math:`\\tilde{T}=T-\\E[T | X, W]` denotes the
- * residual outcome and residual treatment.
- *
- * The nuisance function :math:`q` is a simple machine learning problem and
- * user can use setOutcomeModel to set an arbitrary sparkML model
- * that is internally used to solve this problem
- *
- * The problem of estimating the nuisance function :math:`f` is also a machine learning problem and
- * user can use setTreatmentModel to set an arbitrary sparkML model
- * that is internally used to solve this problem.
- *
- */
+  * where a set of nuisance functions are estimated in the first stage in a cross-fitting manner
+  * and a final stage estimates the average treatment effect (ATE) model.
+  * Our goal is to estimate the constant marginal ATE Theta(X)
+  *
+  * In this estimator, the ATE is estimated by using the following estimating equations:
+  * .. math ::
+  * Y - \\E[Y | X, W] = \\Theta(X) \\cdot (T - \\E[T | X, W]) + \\epsilon
+  *
+  * Thus if we estimate the nuisance functions :math:`q(X, W) = \\E[Y | X, W]` and
+  * :math:`f(X, W)=\\E[T | X, W]` in the first stage, we can estimate the final stage ate for each
+  * treatment t, by running a regression, minimizing the residual on residual square loss,
+  * estimating Theta(X) is a final regression problem, regressing tilde{Y} on X and tilde{T})
+  *
+  * .. math ::
+  * \\hat{\\theta} = \\arg\\min_{\\Theta}\
+  * \E_n\\left[ (\\tilde{Y} - \\Theta(X) \\cdot \\tilde{T})^2 \\right]
+  *
+  * Where
+  * `\\tilde{Y}=Y - \\E[Y | X, W]` and :math:`\\tilde{T}=T-\\E[T | X, W]` denotes the
+  * residual outcome and residual treatment.
+  *
+  * The nuisance function :math:`q` is a simple machine learning problem and
+  * user can use setOutcomeModel to set an arbitrary sparkML model
+  * that is internally used to solve this problem
+  *
+  * The problem of estimating the nuisance function :math:`f` is also a machine learning problem and
+  * user can use setTreatmentModel to set an arbitrary sparkML model
+  * that is internally used to solve this problem.
+  *
+  */
 //noinspection ScalaDocParserErrorInspection,ScalaDocUnclosedTagWithoutParser
 class DoubleMLEstimator(override val uid: String)
   extends Estimator[DoubleMLModel] with ComplexParamsWritable
@@ -65,23 +69,28 @@ class DoubleMLEstimator(override val uid: String)
   def this() = this(Identifiable.randomUID("DoubleMLEstimator"))
 
   /** Fits the DoubleML model.
-   *
-   * @param dataset The input dataset to train.
-   * @return The trained DoubleML model, from which you can get Ate and Ci values
-   */
+    *
+    * @param dataset The input dataset to train.
+    * @return The trained DoubleML model, from which you can get Ate and Ci values
+    */
   override def fit(dataset: Dataset[_]): DoubleMLModel = {
     logFit({
       require(getMaxIter > 0, "maxIter should be larger than 0!")
+      validateColTypeWithModel(dataset, getTreatmentCol, getTreatmentModel)
+      validateColTypeWithModel(dataset, getOutcomeCol, getOutcomeModel)
+
       if (get(weightCol).isDefined) {
         getTreatmentModel match {
           case w: HasWeightCol => w.set(w.weightCol, getWeightCol)
-          case _ => throw new Exception("""The selected treatment model does not support sample weight,
+          case _ => throw new Exception(
+            """The selected treatment model does not support sample weight,
             but the weightCol parameter was set for the DoubleMLEstimator.
             Please select a treatment model that supports sample weight.""".stripMargin)
         }
         getOutcomeModel match {
           case w: HasWeightCol => w.set(w.weightCol, getWeightCol)
-          case _ => throw new Exception("""The selected outcome model does not support sample weight,
+          case _ => throw new Exception(
+            """The selected outcome model does not support sample weight,
             but the weightCol parameter was set for the DoubleMLEstimator.
             Please select a outcome model that supports sample weight.""".stripMargin)
         }
@@ -94,20 +103,20 @@ class DoubleMLEstimator(override val uid: String)
       log.info(s"Parallelism: $getParallelism")
       val executionContext = getExecutionContextProxy
 
-      val ateFutures =(1 to getMaxIter).toArray.map { index =>
+      val ateFutures = (1 to getMaxIter).toArray.map { index =>
         Future[Option[Double]] {
           log.info(s"Executing ATE calculation on iteration: $index")
           // If the algorithm runs over 1 iteration, do not bootstrap from dataset,
           // otherwise, redraw sample with replacement
-          val redrewDF =  if (getMaxIter == 1) dataset else dataset.sample(withReplacement = true, fraction = 1)
+          val redrewDF = if (getMaxIter == 1) dataset else dataset.sample(withReplacement = true, fraction = 1)
           val ate: Option[Double] =
             try {
               val totalTime = new StopWatch
               val oneAte = totalTime.measure {
                 trainInternal(redrewDF)
               }
-              log.info(s"Completed ATE calculation on iteration $index and got ATE value: $oneAte, " +
-                s"time elapsed: ${totalTime.elapsed() / 6e10} minutes")
+              log.info(s"Completed ATE calculation on iteration $index " +
+                s"and got ATE value: $oneAte, time elapsed: ${totalTime.elapsed() / 6e10} minutes")
               Some(oneAte)
             } catch {
               case ex: Throwable =>
@@ -120,12 +129,13 @@ class DoubleMLEstimator(override val uid: String)
       }
 
       val ates = awaitFutures(ateFutures).flatten
+
       if (ates.isEmpty) {
         throw new Exception("ATE calculation failed on all iterations. Please check the log for details.")
       }
       val dmlModel = this.copyValues(new DoubleMLModel(uid)).setRawTreatmentEffects(ates.toArray)
       dmlModel
-    })
+    }, dataset.columns.length)
   }
 
   //scalastyle:off method.length
@@ -184,32 +194,48 @@ class DoubleMLEstimator(override val uid: String)
     val treatmentResidualVecCol = DatasetExtensions.findUnusedColumnName("treatmentResidualVec", dataset)
 
     def calculateResiduals(train: Dataset[_], test: Dataset[_]): DataFrame = {
-      val treatmentModel = treatmentEstimator.setInputCols(train.columns.filterNot(_ == getOutcomeCol)).fit(train)
-      val outcomeModel = outcomeEstimator.setInputCols(train.columns.filterNot(_ == getTreatmentCol)).fit(train)
+      val treatmentModel = treatmentEstimator.setInputCols(
+        train.columns.filterNot(Array(getTreatmentCol, getOutcomeCol
+        ).contains)
+      )
+
+      val outcomeModel = outcomeEstimator.setInputCols(
+        train.columns.filterNot(Array(getOutcomeCol, getTreatmentCol
+        ).contains)
+      )
 
       val treatmentResidual =
         new ResidualTransformer()
           .setObservedCol(getTreatmentCol)
           .setPredictedCol(treatmentResidualPredictionColName)
           .setOutputCol(treatmentResidualCol)
-      val dropTreatmentPredictedColumns = new DropColumns().setCols(treatmentPredictionColsToDrop.toArray)
+      val dropTreatmentPredictedColumns = new DropColumns().setCols(treatmentPredictionColsToDrop)
       val outcomeResidual =
         new ResidualTransformer()
           .setObservedCol(getOutcomeCol)
           .setPredictedCol(outcomeResidualPredictionColName)
           .setOutputCol(outcomeResidualCol)
-      val dropOutcomePredictedColumns = new DropColumns().setCols(outcomePredictionColsToDrop.toArray)
+      val dropOutcomePredictedColumns = new DropColumns().setCols(outcomePredictionColsToDrop)
+
+      // TODO: use org.apache.spark.ml.functions.array_to_vector function maybe slightly more efficient.
       val treatmentResidualVA =
         new VectorAssembler()
           .setInputCols(Array(treatmentResidualCol))
           .setOutputCol(treatmentResidualVecCol)
           .setHandleInvalid("skip")
-      val pipeline = new Pipeline().setStages(Array(
-        treatmentModel, treatmentResidual, dropTreatmentPredictedColumns,
-        outcomeModel, outcomeResidual, dropOutcomePredictedColumns,
-        treatmentResidualVA))
 
-      pipeline.fit(test).transform(test)
+      val treatmentPipeline = new Pipeline()
+        .setStages(Array(treatmentModel, treatmentResidual, dropTreatmentPredictedColumns))
+        .fit(train)
+
+      val outcomePipeline = new Pipeline()
+        .setStages(Array(outcomeModel, outcomeResidual, dropOutcomePredictedColumns))
+        .fit(train)
+
+      val df1 = treatmentPipeline.transform(test).cache
+      val df2 = outcomePipeline.transform(df1).cache
+      val transformed = treatmentResidualVA.transform(df2)
+      transformed
     }
 
     // Note, we perform these steps to get ATE
@@ -222,8 +248,8 @@ class DoubleMLEstimator(override val uid: String)
     */
     val splits = dataset.randomSplit(getSampleSplitRatio)
     val (train, test) = (splits(0).cache, splits(1).cache)
-    val residualsDF1 = calculateResiduals(train, test)
-    val residualsDF2 = calculateResiduals(test, train)
+    val residualsDF1 = calculateResiduals(train, test).select(outcomeResidualCol, treatmentResidualVecCol)
+    val residualsDF2 = calculateResiduals(test, train).select(outcomeResidualCol, treatmentResidualVecCol)
 
     // Average slopes from the two residual models.
     val regressor = new GeneralizedLinearRegression()
@@ -231,11 +257,10 @@ class DoubleMLEstimator(override val uid: String)
       .setFeaturesCol(treatmentResidualVecCol)
       .setFamily("gaussian")
       .setLink("identity")
-      .setFitIntercept(false)
+      .setFitIntercept(true)
 
     val coefficients = Array(residualsDF1, residualsDF2).map(regressor.fit).map(_.coefficients(0))
     val ate = coefficients.sum / coefficients.length
-
     Seq(train, test).foreach(_.unpersist)
     ate
   }
@@ -247,6 +272,35 @@ class DoubleMLEstimator(override val uid: String)
   @DeveloperApi
   override def transformSchema(schema: StructType): StructType = {
     DoubleMLEstimator.validateTransformSchema(schema)
+  }
+
+  protected def validateColTypeWithModel(dataset: Dataset[_], colName: String, model: Estimator[_]): Unit = {
+    val colType = dataset.schema(colName).dataType
+    val modelType = getDoubleMLModelType(model)
+    colType match {
+      case IntegerType =>
+        // If column is integer with value 0 or 1, it can be used with classification model
+        // If column has normal integer values, it can be used with regression model
+        // If user set to use classification model, verify if all values in (0, 1)
+        if (modelType == DoubleMLModelTypes.Binary) {
+          val hasInvalidValues = dataset.filter(!col(colName).isin(0, 1)).count() > 0
+          if (hasInvalidValues)
+            throw new Exception(s"column '$colName' in dataset is integer data type and " +
+              "you set to use a classification model for it, " +
+              "its all values must be either 0 or 1, but it has other values.")
+        }
+      case BooleanType =>
+        if (modelType == DoubleMLModelTypes.Continuous)
+          throw new Exception(s"column '$colName' in dataset is boolean data type, " +
+            "but you set to use a regression model for it.")
+      case DoubleType | LongType =>
+        if (modelType == DoubleMLModelTypes.Binary)
+          throw new Exception(s"column '$colName' in dataset is double or long data type, " +
+            "but you set to use a classification model for it.")
+      case _ =>
+        throw new Exception(s"column '$colName' must be of type DoubleType, LongType, " +
+          s"IntegerType or BooleanType but got $colType")
+    }
   }
 }
 
@@ -270,12 +324,19 @@ class DoubleMLModel(val uid: String)
     this,
     "rawTreatmentEffects",
     "raw treatment effect results for all iterations")
+
   def getRawTreatmentEffects: Array[Double] = $(rawTreatmentEffects)
+
   def setRawTreatmentEffects(v: Array[Double]): this.type = set(rawTreatmentEffects, v)
 
   def getAvgTreatmentEffect: Double = {
-    val finalAte =  $(rawTreatmentEffects).sum / $(rawTreatmentEffects).length
+    val finalAte = $(rawTreatmentEffects).sum / $(rawTreatmentEffects).length
     finalAte
+  }
+
+  def getPValue: Double = {
+    val pvalue = TestUtils.tTest(0.0, $(rawTreatmentEffects))
+    pvalue
   }
 
   def getConfidenceInterval: Array[Double] = {
@@ -294,14 +355,14 @@ class DoubleMLModel(val uid: String)
   override def copy(extra: ParamMap): DoubleMLModel = defaultCopy(extra)
 
   /**
-   * :: Experimental ::
-   * DoubleMLEstimator transform  function is still experimental, and its behavior could change in the future.
-  */
+    * :: Experimental ::
+    * DoubleMLEstimator transform  function is still experimental, and its behavior could change in the future.
+    */
   @Experimental
   override def transform(dataset: Dataset[_]): DataFrame = {
     logTransform[DataFrame]({
       dataset.toDF()
-    })
+    }, dataset.columns.length)
   }
 
   @DeveloperApi

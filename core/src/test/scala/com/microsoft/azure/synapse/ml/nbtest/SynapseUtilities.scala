@@ -203,9 +203,9 @@ object SynapseUtilities {
          |         "spark.jars.packages" : "$SparkMavenPackageList",
          |         "spark.jars.repositories" : "$SparkMavenRepositoryList",
          |         "spark.jars.excludes": "$excludes",
-         |         "spark.driver.userClassPathFirst": "true",
-         |         "spark.executor.userClassPathFirst": "true",
-         |         "spark.sql.parquet.enableVectorizedReader":"false"
+         |         "spark.yarn.user.classpath.first": "true",
+         |         "spark.sql.parquet.enableVectorizedReader":"false",
+         |         "spark.sql.legacy.replaceDatabricksSparkAvro.enabled": "true"
          |     }
          | }
       """.stripMargin

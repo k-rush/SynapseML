@@ -16,8 +16,6 @@ import java.io.File
 
 object PyCodegen {
 
-  type Foo = Estimator[_ <: Model[_]]
-
   import CodeGenUtils._
 
   def generatePythonClasses(conf: CodegenConfig): Unit = {
@@ -32,7 +30,8 @@ object PyCodegen {
     val dir = join(conf.pySrcDir, "synapse", "ml", packageFolder)
     val packageString = if (packageFolder != "") packageFolder.replace("/", ".") else ""
     val importStrings = if (packageFolder == "/cognitive") {
-      dir.listFiles.filter(_.isDirectory).sorted
+      dir.listFiles.filter(_.isDirectory)
+        .filter(folder => folder.getName != "langchain").sorted
         .map(folder => s"from synapse.ml$packageString.${folder.getName} import *\n").mkString("")
     } else {
       dir.listFiles.filter(_.isFile).sorted

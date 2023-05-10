@@ -26,6 +26,8 @@ import scala.language.existentials
 abstract class AnomalyDetectorBase(override val uid: String) extends CognitiveServicesBase(uid)
   with HasCognitiveServiceInput with HasInternalJsonOutputParser with HasSetLocation with HasSetLinkedService {
 
+  override private[ml] def internalServiceType: String = "anomalydetector"
+
   val granularity = new ServiceParam[String](this, "granularity",
     """
       |Can only be one of yearly, monthly, weekly, daily, hourly or minutely.
@@ -263,7 +265,7 @@ class SimpleDetectAnomalies(override val uid: String) extends AnomalyDetectorBas
         getErrorCol,
         s"$getOutputCol.1"
       ).withColumnRenamed("1", getOutputCol)
-    })
+    }, dataset.columns.length)
 
   }
 

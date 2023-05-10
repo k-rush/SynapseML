@@ -208,7 +208,7 @@ class ONNXModel(override val uid: String)
     sliceModelAtOutputs(this, outputs)
   }
 
-  override def transform(dataset: Dataset[_]): DataFrame = logTransform {
+  override def transform(dataset: Dataset[_]): DataFrame = logTransform ({
     val inputSchema = dataset.schema
     this.validateSchema(inputSchema)
 
@@ -225,22 +225,20 @@ class ONNXModel(override val uid: String)
 
     // Due to potential slicing of model, we either use this model or a sliced one to do the actual transform
     actualModel.transformInner(dataset, inputSchema)
-  }
+  }, dataset.columns.length)
 
-  def transformInner(dataset: Dataset[_], inputSchema: StructType): DataFrame = logTransform {
+  def transformInner(dataset: Dataset[_], inputSchema: StructType): DataFrame = logTransform ({
     val modelOutputSchema = getModelOutputSchema(inputSchema)
 
     implicit val enc: Encoder[Row] = RowEncoder(
       StructType(modelOutputSchema.map(f => StructField(f.name, ArrayType(f.dataType))))
     )
 
-    // The cache call is a workaround for GH issue 1075:
-    //  https://github.com/Microsoft/SynapseML/issues/1075
     val batchedDF = getMiniBatcher.transform(dataset)
-    val batchedCache = if (batchedDF.isStreaming) batchedDF else batchedDF.cache().unpersist()
-    val (coerced, feedDict) = coerceBatchedDf(batchedCache)
+    val (coerced, feedDict) = coerceBatchedDf(batchedDF)
     val modelBc = broadcastedModelPayload.getOrElse(rebroadcastModelPayload(dataset.sparkSession))
     val (fetchDicts, devType, optLevel) = (getFetchDict, get(deviceType), OptLevel.valueOf(getOptimizationLevel))
+
     val outputDf = coerced.mapPartitions {
       rows =>
         val payload = modelBc.value
@@ -252,14 +250,10 @@ class ONNXModel(override val uid: String)
         applyModel(session, env, feedDict, fetchDicts, inputSchema)(rows)
     }
 
-    // The cache call is a workaround for GH issue 1075:
-    //  https://github.com/Microsoft/SynapseML/issues/1075
-    val outputCache = if (outputDf.isStreaming) outputDf else outputDf.cache().unpersist()
-
-    val flattenedDF = new FlattenBatch().transform(outputCache)
+    val flattenedDF = new FlattenBatch().transform(outputDf)
 
     (softMaxTransform _ andThen argMaxTransform) (flattenedDF)
-  }
+  }, dataset.columns.length)
 
   private def softMaxTransform(input: DataFrame): DataFrame = {
     this.getSoftMaxDict.foldLeft(input) {

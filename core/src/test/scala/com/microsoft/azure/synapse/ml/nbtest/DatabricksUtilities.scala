@@ -56,7 +56,8 @@ object DatabricksUtilities {
     Map("pypi" -> Map("package" -> "Pillow")),
     Map("pypi" -> Map("package" -> "onnxmltools==1.7.0")),
     Map("pypi" -> Map("package" -> "lightgbm")),
-    Map("pypi" -> Map("package" -> "mlflow"))
+    Map("pypi" -> Map("package" -> "mlflow")),
+    Map("pypi" -> Map("package" -> "openai"))
   ).toJson.compactPrint
 
   // TODO: install synapse.ml.dl wheel package here
@@ -391,9 +392,10 @@ abstract class DatabricksTestHelper extends TestBase {
       assert(isClusterActive(clusterId))
     }
 
+    Thread.sleep(1000) // Ensure cluster is not overwhelmed
     println("Installing libraries")
     installLibraries(clusterId, libraries)
-    tryWithRetries(Seq.fill(60 * 3)(1000).toArray) { () =>
+    tryWithRetries(Seq.fill(60 * 6)(1000).toArray) { () =>
       assert(areLibrariesInstalled(clusterId))
     }
 
